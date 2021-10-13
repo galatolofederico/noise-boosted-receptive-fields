@@ -24,11 +24,8 @@ parser.add_argument("--noise-position", type=str, default="backbone", choices=["
 parser.add_argument("--without-noise", default=False, action="store_true")
 parser.add_argument("--without-others", default=False, action="store_true")
 
-parser.add_argument("--name", type=str, default="test")
 parser.add_argument("--lr", type=float, default=.001)
 parser.add_argument("--batch-size", type=int, default=100)
-
-parser.add_argument("--n-outputs", type=int, default=10)
 
 parser.add_argument("--experiment", type=str, default="")
 parser.add_argument("--wandb", action="store_true")
