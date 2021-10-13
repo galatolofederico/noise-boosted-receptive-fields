@@ -4,5 +4,6 @@ __pycache__/
 /wandb
 /nbrf
 /checkpoints
+/logs
 /datasets/*
 !/datasets/*.py

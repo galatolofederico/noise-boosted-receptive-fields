@@ -6,6 +6,7 @@ class CNN(torch.nn.Module):
 
         self.backbone = backbone()
         self.head = head()
+        self.loss_fn = torch.nn.CrossEntropyLoss()
 
     def forward(self, x):
         features = self.backbone(x)
@@ -19,6 +20,9 @@ class CNN(torch.nn.Module):
         self.head = self.head.to(*args, **kwargs)
         return self
 
+    def compute_loss(self, x, y):
+        out = self.forward(x)
+        return self.loss_fn(out, y)
 
 
 

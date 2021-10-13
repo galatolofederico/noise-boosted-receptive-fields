@@ -1,26 +1,60 @@
 import os
 import torch
 import pytorch_lightning as pl
-import sklearn
-from sklearn.metrics import confusion_matrix
-import csv
+import sklearn.metrics
 import argparse
-class Classifier(pl.LightningModule):
-    def __init__(self, args):
-        pl.LightningModule.__init__(self)
-        self.args = args
 
-        self.train_dataset = args.train_dataset
-        self.val_dataset = args.valid_dataset
-        self.test_dataset = args.test_dataset
+from datasets.loaders import *
+
+from modules.backbones import MNISTCNN
+from modules.heads import MNISTRF, MNISTFF
+from modules.noise_generator import CyclicNoise
+
+from models.nbrf import NBRF
+from models.cnn import CNN
+
+class ClassifierModule(pl.LightningModule):
+    def __init__(self, hparams):
+        super().__init__()
+        self.save_hyperparameters(hparams)
+
+        if self.hparams.dataset == "mnist":
+            self.train_dataset, self.val_dataset, self.test_dataset, noise_loader = get_mnist_split(self.hparams.batch_size)
+        elif self.hparams.dataset == "fmnist":
+            self.train_dataset, self.val_dataset, self.test_dataset, noise_loader = get_fmnist_split(self.hparams.batch_size)
+        elif self.hparams.dataset == "kmnist":
+            self.train_dataset, self.val_dataset, self.test_dataset, noise_loader = get_kmnist_split(self.hparams.batch_size)
+        else:
+            raise Exception(f"Unknown dataset {self.hparams.dataset}")
+        
+        if self.hparams.model == "nbrf":
+            self.model = NBRF(
+                backbone = MNISTCNN,
+                head = MNISTRF,
+                n_rfs = 10,
+                with_noise = self.hparams.with_noise,
+                with_others = self.hparams.with_others,
+                noise = self.hparams.noise,
+                noise_generator = CyclicNoise(noise_loader),
+                noise_position = self.hparams.noise_position,
+            )
+        elif self.hparams.model == "cnn":
+            self.model = CNN(
+                backbone = MNISTCNN,
+                head = MNISTFF
+            )
+        else:
+            raise Exception(f"Unknown model {self.hparams.model}")
+
+    def forward(self, x):
+        return self.model(x)
 
     def training_step(self, batch, batch_nb):
         x, y = batch
-        out = self.forward(x)
+        out = self.model.forward(x)
 
         acc = (out.max(dim=1).indices == y).float().mean()
-
-        loss = self.compute_loss(x, y)
+        loss = self.model.compute_loss(x, y)
 
         self.log('train_loss', loss)
         self.log('train_acc', acc)
@@ -29,17 +63,17 @@ class Classifier(pl.LightningModule):
 
     def validation_step(self, batch, batch_nb):
         x, y = batch
-        out = self.forward(x)
+        out = self.model.forward(x)
 
         acc = (out.max(dim=1).indices == y).float().mean()
-        loss = self.compute_loss(x, y)
+        loss = self.model.compute_loss(x, y)
 
         self.log("val_loss", loss.item())
         self.log("val_acc", acc.item())
 
     def test_step(self, batch, batch_nb):
         x, y = batch
-        out = self.forward(x)
+        out = self.model.forward(x)
 
         raw_preds = out.max(dim=1).indices
         preds5 = raw_preds.clone()
@@ -79,29 +113,7 @@ class Classifier(pl.LightningModule):
         self.log_dict(ret_dict)
 
     def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(), lr=self.args.lr)
-
-    def manual_log(self, file):
-        exists = os.path.exists(file)
-        resultsfile = open(file, "a")
-
-        results = {
-            "model": self.args.model,
-            "trained_with": self.args.dataset,
-            "without_noise": self.args.without_noise,
-            "without_other": self.args.without_other,
-            "noise": self.args.noise,
-            "noise_position": self.args.noise_position,
-            "accuracy": self.results["test_accuracy"],
-            "05_accuracy": self.results["test_05_accuracy"],
-            "09_accuracy": self.results["test_09_accuracy"],
-            "raw_accuracy": self.results["test_raw_accuracy"]
-        }
-
-        writer = csv.DictWriter(resultsfile, fieldnames=results.keys())
-        if not exists: writer.writeheader()
-        writer.writerow(results)
-        resultsfile.close()
+        return torch.optim.Adam(self.parameters(), lr=self.hparams.lr)
 
     def train_dataloader(self):
         return self.train_dataset
